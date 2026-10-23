@@ -2,9 +2,10 @@
 """
 Notification Hook for Flex Capacity Automation (`retry-flex-cron.sh`)
 
-This script is invoked by `retry-flex-cron.sh` when compute resources are found
-or confirmed in a running state. It receives detailed findings via command-line
-arguments and provides an extensible foundation for custom notification logic.
+This script is invoked by `retry-flex-cron.sh` when compute resources (such as
+2x NVIDIA A100 and 2x NVIDIA H100 GPUs) are found or confirmed in a running
+state. It receives detailed findings via command-line arguments and provides an
+extensible foundation for custom notification logic.
 
 NOTE: Out of the box, this script logs findings locally and does NOT send external
 network requests. Implement your custom delivery mechanism (Slack, Webhook,
@@ -51,7 +52,23 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--machine-type",
         default="unknown-machine-type",
-        help="Machine / accelerator type",
+        help="Machine / accelerator type (e.g., a2-highgpu-2g, a3-highgpu-2g)",
+    )
+    parser.add_argument(
+        "--gpu-type",
+        default="NVIDIA_GPU",
+        help="Accelerator model (e.g., NVIDIA_A100, NVIDIA_H100)",
+    )
+    parser.add_argument(
+        "--gpu-count",
+        type=int,
+        default=2,
+        help="Number of GPUs attached to the instance (default: 2)",
+    )
+    parser.add_argument(
+        "--end-date",
+        default="2027-02-28T23:59:59Z",
+        help="Campaign expiration timestamp (ISO 8601 UTC)",
     )
     parser.add_argument(
         "--ip",
@@ -86,7 +103,11 @@ def send_custom_notification(findings: dict) -> None:
     webhook_url = os.environ.get("NOTIFICATION_WEBHOOK_URL")
     if webhook_url:
         payload = json.dumps({
-            "text": f"Compute resource found: {findings['instance_name']} is {findings['status']} in {findings['zone']}."
+            "text": (
+                f"Compute resource found: {findings['instance_name']} "
+                f"({findings['gpu_count']}x {findings['gpu_type']}, {findings['machine_type']}) "
+                f"is {findings['status']} in {findings['zone']} (Campaign active until {findings['end_date']})."
+            )
         }).encode("utf-8")
         req = urllib.request.Request(
             webhook_url,
@@ -127,6 +148,9 @@ def main() -> int:
         "project": args.project,
         "zone": args.zone,
         "machine_type": args.machine_type,
+        "gpu_type": args.gpu_type,
+        "gpu_count": args.gpu_count,
+        "end_date": args.end_date,
         "ip_address": args.ip,
         "timestamp": args.timestamp,
         "log_file": args.log_file,
@@ -136,10 +160,11 @@ def main() -> int:
     output_summary = (
         f"[Notification Hook] Event: {findings['event']} | "
         f"Instance: {findings['instance_name']} | "
+        f"GPU: {findings['gpu_count']}x {findings['gpu_type']} ({findings['machine_type']}) | "
         f"Status: {findings['status']} | "
         f"Zone: {findings['zone']} | "
         f"IP: {findings['ip_address']} | "
-        f"Machine Type: {findings['machine_type']}"
+        f"Until: {findings['end_date']}"
     )
 
     print(output_summary)
